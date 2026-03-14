@@ -38,5 +38,6 @@ package entrevista.rabbitmq.rabbitmq.model;
         }
 
         public void setDataCriacao(String dataCriacao) {
+            this.dataCriacao = dataCriacao;
         }
     }
