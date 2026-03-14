@@ -18,11 +18,10 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/pedidos")
 public class PedidoController {
-    private static final Logger logger = LoggerFactory.getLogger(MessageConsumer.class);
+    private static final Logger logger = LoggerFactory.getLogger(PedidoController.class);
     private final AmqpTemplate amqpTemplate;
     private final PedidoService pedidoService;
 
-    // Construtor corrigido
     public PedidoController(AmqpTemplate amqpTemplate, PedidoService pedidoService) {
         this.amqpTemplate = amqpTemplate;
         this.pedidoService = pedidoService;
@@ -31,13 +30,19 @@ public class PedidoController {
     @PostMapping
     public ResponseEntity<String> criarPedido(@Valid @RequestBody Pedido pedido) {
         try {
-            if (pedido.getQuantidade() <= 0 || pedido.getProduto().isEmpty()) {
+            if (pedido.getQuantidade() <= 0 || (pedido.getProduto() == null || pedido.getProduto().isEmpty())) {
                 logger.warn("Pedido inválido recebido: {}", pedido);
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Pedido inválido.");
             }
 
-            pedido.setId(UUID.randomUUID());
-            pedido.setDataCriacao(String.valueOf(LocalDateTime.now()));
+            // Usar o ID enviado pelo cliente (Swing) ou gerar um novo se não existir
+            if (pedido.getId() == null) {
+                pedido.setId(UUID.randomUUID());
+            }
+            
+            if (pedido.getDataCriacao() == null) {
+                pedido.setDataCriacao(LocalDateTime.now().toString());
+            }
 
             // Salvar o pedido com status inicial
             pedidoService.salvarPedido(pedido.getId(), "ENVIADO");
@@ -46,7 +51,8 @@ public class PedidoController {
             amqpTemplate.convertAndSend(RabbitConfig.QUEUE_PEDIDOS_ENTRADA, pedido);
 
             logger.info("Pedido criado e enviado: ID={} Produto={}", pedido.getId(), pedido.getProduto());
-            return ResponseEntity.status(HttpStatus.ACCEPTED).body("Pedido recebido com ID: " + pedido.getId());
+            // Retorna o ID para garantir que o cliente saiba qual foi usado
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(pedido.getId().toString());
         } catch (Exception e) {
             logger.error("Erro ao criar pedido: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro ao processar pedido.");
@@ -56,7 +62,6 @@ public class PedidoController {
     @GetMapping("/status/{id}")
     public ResponseEntity<String> obterStatus(@PathVariable UUID id) {
         try {
-            // Verificar se o pedido existe antes de consultar o status
             if (!pedidoService.pedidoExiste(id)) {
                 logger.warn("Pedido não encontrado: ID={}", id);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Pedido não encontrado.");
@@ -64,7 +69,7 @@ public class PedidoController {
 
             String status = pedidoService.obterStatus(id);
             logger.info("Status do pedido consultado: ID={} Status={}", id, status);
-            return ResponseEntity.ok("Status do pedido: " + status);
+            return ResponseEntity.ok(status);
         } catch (Exception e) {
             logger.error("Erro ao obter status do pedido: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro ao consultar status.");
